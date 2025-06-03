@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit
 import chess
 import chess.engine
 import minimax_alphabeta
+import mcts
 import time
 import requests
 import json
@@ -24,7 +25,7 @@ def evaluation(game):
         if response.status_code == 200:
             d = response.json()
             if 'eval' in d:
-                return d['eval']
+                return d['eval']  # Print the value of 'eval' key if it exists
             else:
                 return 'error from API'
         else:
@@ -55,25 +56,22 @@ def handle_move(data):
     global game
     from_square = data['from']
     to_square = data['to']
-    promotion = data.get('promotion', '')
+    promotion = data['promotion']
 
     try:
-        piece = game.piece_at(chess.parse_square(from_square))
-        move_uci = from_square + to_square
-        if piece and piece.piece_type == chess.PAWN and promotion:
-            move_uci += promotion
-        move = chess.Move.from_uci(move_uci)
+        move = chess.Move.from_uci(from_square + to_square + promotion)
         if move in game.legal_moves:
             game.push(move)
             result = check_game_status()
             if result:
                 emit('announcement', {'result': result}, broadcast=True)
             
-            score = 1 #evaluation(game)
+            score = 1#evaluation(game)
             emit('update', {'fen': game.fen(),
                             'turn': 'white' if game.turn else 'black',
-                            'message': ('black' if game.turn else 'white') + ':' + move_uci + f' score:{score}'},
+                            'message': ('black' if game.turn else 'white') + ':' + from_square + to_square + promotion + f' score:{score}'},
                 broadcast=True)
+
         else:
             emit('error', {'message': 'Illegal move'}, broadcast=True)
     except Exception as e:
@@ -94,6 +92,10 @@ def handle_ai_move(data):
             move = minimax_alphabeta.findMoveMinimax(board=game, depth=param)[1]
         elif mode == "AlphaBeta":
             move = minimax_alphabeta.findMoveAlphaBeta(board=game, depth=param, alpha=-float('inf'), beta=float('inf'))[1]
+        elif mode == "MCTS":
+            move = mcts.mcts_findNextMove(game=game, iteration=param)
+        elif mode == "MCTS_NN":
+            pass
 
         try:
             if move in game.legal_moves:
@@ -121,3 +123,4 @@ def handle_reset():
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
+    
